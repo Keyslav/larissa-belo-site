@@ -365,17 +365,25 @@ html.js .rv-img.in-view { clip-path: inset(0 0 0 0); }
   -webkit-mask-image: linear-gradient(to right, transparent 0%, #000 12%, #000 88%, transparent 100%);
 }
 .ticker-track {
-  display: inline-flex; align-items: center; gap: 1.6em;
-  animation: ticker-scroll 30s linear infinite;
+  display: inline-flex;
+  width: max-content;
+  animation: ticker-scroll 45s linear infinite;
+  will-change: transform;
 }
-.ticker-track span {
+.ticker-group {
+  display: flex; align-items: center; gap: 1.6em;
+  padding-right: 1.6em;
+  flex-shrink: 0;
+}
+.ticker-group span {
   font-family: var(--font-display);
   font-style: italic;
   font-weight: 300;
   font-size: 1.2rem;
   color: var(--clay-soft);
+  white-space: nowrap;
 }
-.ticker-track i {
+.ticker-group i {
   font-style: normal;
   font-size: .65rem;
   color: rgba(232, 201, 180, .5);

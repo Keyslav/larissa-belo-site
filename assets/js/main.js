@@ -53,38 +53,47 @@
     var pending = revealEls.slice();
     var revealObserver = null;
 
+    function markInView(el) {
+      el.classList.add("in-view");
+      if (revealObserver) revealObserver.unobserve(el);
+    }
+
     if ("IntersectionObserver" in window) {
       revealObserver = new IntersectionObserver(
         function (entries) {
           entries.forEach(function (entry) {
-            if (entry.isIntersecting) {
-              entry.target.classList.add("in-view");
-              revealObserver.unobserve(entry.target);
-            }
+            if (entry.isIntersecting) markInView(entry.target);
           });
         },
         { threshold: 0.12, rootMargin: "0px 0px -60px 0px" }
       );
       pending.forEach(function (el) { revealObserver.observe(el); });
-    } else {
-      // Fallback sem IntersectionObserver: revela conforme o scroll
-      var onScrollReveal = function () {
-        pending = pending.filter(function (el) {
-          if (isInViewport(el)) { el.classList.add("in-view"); return false; }
-          return true;
-        });
-        if (!pending.length) window.removeEventListener("scroll", onScrollReveal);
-      };
-      window.addEventListener("scroll", onScrollReveal, { passive: true });
     }
 
-    // Varredura inicial: garante a entrada do conteúdo acima da dobra mesmo
-    // se os callbacks do observer atrasarem (aba oculta, pré-render etc.)
-    setTimeout(function () {
-      revealEls.forEach(function (el) {
-        if (isInViewport(el)) el.classList.add("in-view");
+    // Rede de segurança em todos os navegadores: varredura por viewport
+    // no scroll (throttled). Cobre casos em que o observer não dispara —
+    // ex.: figuras absolutas com clip-path, aba oculta, pré-render.
+    var sweepTicking = false;
+    function sweep() {
+      pending = pending.filter(function (el) {
+        if (el.classList.contains("in-view")) return false;
+        if (isInViewport(el)) { markInView(el); return false; }
+        return true;
       });
-    }, 60);
+      if (!pending.length) window.removeEventListener("scroll", requestSweep);
+      sweepTicking = false;
+    }
+    function requestSweep() {
+      if (!sweepTicking) {
+        sweepTicking = true;
+        window.requestAnimationFrame(sweep);
+      }
+    }
+    window.addEventListener("scroll", requestSweep, { passive: true });
+
+    // Varredura inicial: conteúdo acima da dobra entra mesmo se os
+    // callbacks do observer atrasarem
+    setTimeout(sweep, 60);
   } else {
     revealEls.forEach(function (el) { el.classList.add("in-view"); });
   }
