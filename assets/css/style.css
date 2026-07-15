@@ -367,7 +367,7 @@ html.js .rv-img.in-view { clip-path: inset(0 0 0 0); }
 .ticker-track {
   display: inline-flex;
   width: max-content;
-  animation: ticker-scroll 45s linear infinite;
+  animation: ticker-scroll 90s linear infinite;
   will-change: transform;
 }
 .ticker-group {
