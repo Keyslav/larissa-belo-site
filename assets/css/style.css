@@ -598,8 +598,31 @@ html.js .rv-img.in-view { clip-path: inset(0 0 0 0); }
 }
 .depoimentos h2 { margin-bottom: 1.4em; }
 
+.depo-disclaimer {
+  max-width: 640px;
+  margin: 0 auto 2.4em;
+  padding: .9em 1.4em;
+  background: rgba(178, 91, 56, .08);
+  border: 1px dashed var(--clay);
+  border-radius: var(--radius-card);
+  font-size: .82rem;
+  color: var(--clay-deep);
+  line-height: 1.5;
+}
+.depo-disclaimer p { margin: 0; }
+
+.depo-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin: 0 auto 1.2em;
+  border: 3px solid var(--clay-soft);
+  box-shadow: 0 6px 18px -8px var(--shadow);
+}
+
 .depo-carousel { max-width: 760px; margin-inline: auto; }
-.depo-viewport { position: relative; min-height: 11em; }
+.depo-viewport { position: relative; min-height: 14em; }
 .depo-slide {
   position: absolute; inset: 0;
   margin: 0;
