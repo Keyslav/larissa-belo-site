@@ -207,3 +207,17 @@ Deixe todas as imagens como placeholders bem marcados (`alt` + comentário indic
 - [ ] Responsivo, leve em mobile; `prefers-reduced-motion` respeitado; fallback completo sem CDN com rede de segurança de revelação (timeouts + `visibilitychange`); acessibilidade AA e ARIA no acordeão.
 
 Entregue a landing page completa (HTML, CSS e JS), pronta para publicar, seguindo rigorosamente a ordem das seções, a paleta amadeirada saturada, o Ato 1 e a arquitetura de conversão descrita.
+
+---
+
+## 10. NOTA DE PUBLICAÇÃO E VERSIONAMENTO (contexto de deploy — NÃO é tarefa de construção)
+
+> Esta seção é orientação para o desenvolvedor/hospedagem, **não** uma instrução de build para você (Fable). Não gere nada de DNS, Cloudflare, domínio ou infraestrutura a partir daqui — apenas construa a página conforme as seções 0–9. Entregue somente os arquivos (HTML/CSS/JS).
+
+Esta é a **versão 3 (V3)** do site e será a **versão PRINCIPAL**. A topologia de publicação alvo é:
+
+- **larissabelo.com.br** → **V3** (esta nova landing) — versão principal.
+- **v2.larissabelo.com.br** → **V2** (a experiência cinematográfica anterior), preservada.
+- **v1.larissabelo.com.br** → **V1** (o site editorial original), mantida como está.
+
+Ao ficar pronta e aprovada, a V3 assume o domínio principal; a V2 passa a viver no seu subdomínio; a V1 permanece no dela. A associação de domínios é feita fora daqui (Cloudflare/git).
