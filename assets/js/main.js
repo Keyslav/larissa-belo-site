@@ -1,352 +1,325 @@
-/* Larissa Belo — Edificar-se · V3
-   Ato 1: timeline GSAP (pin+scrub via ScrollTrigger) com 6 fases —
-   abstrato→humano: silhueta difusa ganha nitidez conforme a clareza chega.
-   Lenis (smooth), anime.js (micro-detalhes). Fallback nativo completo:
-   sem CDN o Ato fica empilhado (CSS) e os reveals usam IntersectionObserver.
-   Debug determinístico: ?p=0..1 congela o progresso do Ato. */
+/* Larissa Belo — V3
+   JavaScript vanilla, sem dependências. Tudo que este arquivo faz é
+   enriquecimento: se ele falhar ou nunca rodar, o CSS mantém a página
+   inteira legível (os estados iniciais invisíveis vivem sob html.js).
+   Depuração: ?p=0..1 congela a seção de reorganização.  Ver SPEC-V3.md §5–§6 */
 
 (function () {
   "use strict";
 
-  // WhatsApp: cole aqui a URL real (ex.: "https://wa.me/5521XXXXXXXXX")
+  /* Cole aqui a URL real para exibir o botão do WhatsApp.
+     Ex.: var WHATSAPP_URL = "https://wa.me/5521999999999"; */
   var WHATSAPP_URL = "";
 
   var html = document.documentElement;
-  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var hasGSAP = typeof window.gsap !== "undefined" && typeof window.ScrollTrigger !== "undefined";
-  var hasLenis = typeof window.Lenis !== "undefined";
-  var hasAnime = typeof window.anime !== "undefined";
+  var reduzido = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  var debugMatch = location.search.match(/[?&]p=([\d.]+)/);
-  var debugP = debugMatch ? Math.min(1, Math.max(0, parseFloat(debugMatch[1]))) : null;
+  var mDebug = location.search.match(/[?&]p=([\d.]+)/);
+  var pDebug = mDebug ? Math.min(1, Math.max(0, parseFloat(mDebug[1]))) : null;
+  if (pDebug !== null) html.classList.add("p-debug");
 
-  /* ---------- WhatsApp opcional ---------- */
-  var whats = document.querySelector(".btn-whats");
-  if (whats && WHATSAPP_URL) {
-    whats.href = WHATSAPP_URL;
-    whats.hidden = false;
-    whats.target = "_blank";
-    whats.rel = "noopener";
+  /* ---------- utilitários ---------- */
+
+  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  // progresso suavizado dentro de uma janela [a,b]
+  function janela(p, a, b) {
+    var t = clamp01((p - a) / (b - a));
+    return t * t * (3 - 2 * t);
   }
-
-  /* ---------- RNG determinístico (posições do caos) ---------- */
-  function mulberry32(seed) {
+  function semente(s) {
     return function () {
-      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
-      var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      s |= 0; s = (s + 0x6D2B79F5) | 0;
+      var t = Math.imul(s ^ (s >>> 15), 1 | s);
       t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
+  function noViewport(el, folga) {
+    var r = el.getBoundingClientRect();
+    return r.top < window.innerHeight - (folga || 40) && r.bottom > 0;
+  }
+  // agenda uma função para o próximo quadro, no máximo uma vez por quadro
+  function porQuadro(fn) {
+    var agendado = false;
+    return function () {
+      if (agendado) return;
+      agendado = true;
+      requestAnimationFrame(function () { agendado = false; fn(); });
+    };
+  }
 
-  /* ---------- Lenis ---------- */
-  var lenis = null;
-  if (hasLenis && !reduced && debugP === null) {
-    lenis = new Lenis({ duration: 1.1, smoothWheel: true });
-    html.classList.add("lenis");
-    // sincroniza com âncora na carga (sem isso o Lenis "devolve" ao topo)
-    if (location.hash) {
-      var alvoHash = null;
-      try { alvoHash = document.querySelector(location.hash); } catch (e) {}
-      if (alvoHash) {
-        requestAnimationFrame(function () {
-          lenis.scrollTo(alvoHash, { immediate: true, offset: -64 });
-        });
-      }
-    }
+  /* ---------- WhatsApp (só aparece com número real) ---------- */
+
+  var whats = document.querySelector(".btn-whats");
+  if (whats && WHATSAPP_URL) {
+    whats.href = WHATSAPP_URL;
+    whats.target = "_blank";
+    whats.rel = "noopener";
+    whats.hidden = false;
   }
 
   /* ======================================================================
-     ATO 1 — timeline
+     Revelações — com as seis redes de segurança da spec §6
      ====================================================================== */
 
-  var atoTL = null;
-
-  function buildAto() {
-    var W = window.innerWidth, H = window.innerHeight;
-    var mobile = W < 640;
-    var rnd = mulberry32(20260809);
-
-    var tl = gsap.timeline({ paused: debugP !== null, defaults: { ease: "none" } });
-
-    /* -- washes / vinheta / fio -- */
-    tl.fromTo(".wash-caos", { opacity: 0 }, { opacity: 1, duration: 8 }, 2);
-    tl.to(".wash-caos", { opacity: 0, duration: 13 }, 34);
-    tl.fromTo(".wash-meio", { opacity: 0 }, { opacity: 1, duration: 13 }, 33);
-    tl.to(".wash-meio", { opacity: 0, duration: 16 }, 62);
-    tl.fromTo(".wash-fim", { opacity: 0 }, { opacity: 1, duration: 17 }, 61);
-    tl.fromTo(".vinheta", { opacity: 1 }, { opacity: .18, duration: 55 }, 30);
-    tl.fromTo(".fio span", { scaleY: 0 }, { scaleY: 1, duration: 90 }, 5);
-
-    /* -- fase 0 (herói) -- */
-    tl.to(".fase-0", { opacity: 0, y: -46, duration: 6, onStart: fase0Off, onReverseComplete: fase0On }, 8);
-    function fase0Off() { document.querySelector(".fase-0").classList.remove("ativa"); }
-    function fase0On() { document.querySelector(".fase-0").classList.add("ativa"); }
-
-    function copyIn(sel, at) {
-      tl.fromTo(sel, { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 5 }, at);
-    }
-    function copyOut(sel, at) {
-      tl.to(sel, { opacity: 0, y: -30, duration: 5 }, at);
-    }
-
-    /* -- fragmentos: caos → ordem → dissolvem -- */
-    var frags = gsap.utils.toArray(".frag");
-    var alinhaX = mobile ? -W * 0.30 : -W * 0.26;
-    var alinhaY0 = -H * 0.20;
-    frags.forEach(function (f, i) {
-      var cx = (rnd() - 0.5) * W * 0.8;
-      var cy = (rnd() - 0.5) * H * 0.66;
-      var cr = (rnd() - 0.5) * 46;
-      gsap.set(f, { x: cx, y: cy, rotation: cr, opacity: 0 });
-      tl.to(f, { opacity: 1, duration: 4 }, 10 + (i % 6));
-      // ordem: coluna alinhada à esquerda (ritmo de agenda limpa)
-      var ox = alinhaX + (mobile ? 0 : (i % 2) * 10);
-      var oy = alinhaY0 + i * (mobile ? 26 : 34);
-      tl.to(f, { x: ox, y: oy, rotation: 0, duration: 14, ease: "power2.inOut" }, 42 + (i % 5));
-      tl.to(f, { opacity: .28, duration: 6 }, 66 + (i % 4));
-      tl.to(f, { opacity: 0, duration: 5 }, 76 + (i % 3));
-    });
-
-    /* -- copies das fases -- */
-    copyIn(".fase-1", 15); copyOut(".fase-1", 28);
-    copyIn(".fase-2", 34); copyOut(".fase-2", 46);
-    copyIn(".fase-3", 50); copyOut(".fase-3", 62);
-    copyIn(".fase-4", 66); copyOut(".fase-4", 76);
-    copyIn(".fase-5", 83);
-
-    /* -- silhueta: difusa → nítida (a resolução é a narrativa) -- */
-    tl.fromTo(".pose-a", { opacity: 0, y: 30 }, { opacity: .55, y: 0, duration: 8 }, 12);
-    tl.to(".pose-a", { opacity: 0, duration: 7 }, 35);
-    tl.fromTo(".pose-b", { opacity: 0 }, { opacity: .85, duration: 8 }, 36);
-    // crossfade interno: borrado → nítido
-    tl.fromTo(".pose-b .g-sharp", { opacity: 0 }, { opacity: 1, duration: 14 }, 48);
-    tl.to(".pose-b .g-blur", { opacity: 0, duration: 14 }, 48);
-    tl.to(".pose-b", { opacity: 0, duration: 6 }, 73);
-    tl.fromTo(".pose-c", { opacity: 0, scale: .96, transformOrigin: "50% 90%" }, { opacity: 1, scale: 1, duration: 8 }, 74);
-    tl.set(".pose-c .g-sharp", { opacity: 1 }, 74);
-    tl.fromTo(".halo", { opacity: 0, scale: .8 }, { opacity: 1, scale: 1, duration: 12 }, 76);
-    gsap.utils.toArray(".pose-c .petalas circle").forEach(function (c, i) {
-      tl.fromTo(c, { opacity: 0, y: 8 }, { opacity: .95, y: -6 - i * 3, duration: 6 }, 80 + i * 2);
-    });
-
-    /* -- agenda (linhas se desenham na organização) -- */
-    tl.fromTo(".agenda", { opacity: 0 }, { opacity: mobile ? 0 : 1, duration: 4 }, 48);
-    gsap.utils.toArray(".agenda-linha").forEach(function (l, i) {
-      tl.fromTo(l, { strokeDashoffset: 280 }, { strokeDashoffset: 0, duration: 10 }, 49 + i * 2.4);
-    });
-    gsap.utils.toArray(".agenda-ponto").forEach(function (p, i) {
-      tl.fromTo(p, { opacity: 0 }, { opacity: 1, duration: 3 }, 56 + i * 2);
-    });
-    tl.to(".agenda", { opacity: 0, duration: 5 }, 68);
-
-    /* -- partículas: peso disperso → constelação ascendente -- */
-    var parts = gsap.utils.toArray(".particulas i");
-    parts.forEach(function (p, i) {
-      var cx = (rnd() - 0.5) * W * 0.9;
-      var cy = (rnd() - 0.5) * H * 0.8;
-      gsap.set(p, { x: cx, y: cy, opacity: 0 });
-      tl.to(p, { opacity: .45, duration: 5 }, 12 + (i % 7));
-      var ang = (i / parts.length) * Math.PI * 2;
-      var rad = (mobile ? 120 : 190) + (i % 3) * 26;
-      tl.to(p, {
-        x: Math.cos(ang) * rad,
-        y: Math.sin(ang) * rad * .5 - H * 0.12,
-        duration: 20, ease: "power2.inOut"
-      }, 55 + (i % 6));
-      tl.to(p, { opacity: .9, duration: 8 }, 78 + (i % 5));
-    });
-
-    /* -- aviso -- */
-    tl.fromTo(".ato-aviso", { opacity: 0 }, { opacity: 1, duration: 6 }, 90);
-
-    /* alinhamento do tempo total */
-    tl.to({}, { duration: 1 }, 99);
-
-    return tl;
+  function revelarTudo() {
+    var todos = document.querySelectorAll(".rv, .rvi");
+    for (var i = 0; i < todos.length; i++) todos[i].classList.add("vis");
   }
 
-  function initAto() {
-    html.classList.add("gsap");
+  function iniciarRevelacoes() {
+    if (reduzido) { revelarTudo(); return; }
 
-    if (debugP !== null) {
-      html.classList.add("p-debug");
-      atoTL = buildAto();
-      atoTL.progress(debugP);
+    var alvos = Array.prototype.slice.call(document.querySelectorAll(".rv, .rvi"));
+    if (!alvos.length) return;
+
+    var obs = null;
+    function marcar(el) {
+      el.classList.add("vis");
+      if (obs) obs.unobserve(el);
+    }
+
+    // 1 · mecanismo principal
+    if ("IntersectionObserver" in window) {
+      obs = new IntersectionObserver(function (entradas) {
+        for (var i = 0; i < entradas.length; i++) {
+          if (entradas[i].isIntersecting) marcar(entradas[i].target);
+        }
+      }, { threshold: 0.12, rootMargin: "0px 0px -60px 0px" });
+      alvos.forEach(function (el) { obs.observe(el); });
+    }
+
+    // 2 · varredura no scroll (também cobre navegadores sem IO)
+    function varrer() {
+      var restantes = false;
+      for (var i = 0; i < alvos.length; i++) {
+        var el = alvos[i];
+        if (el.classList.contains("vis")) continue;
+        if (noViewport(el)) marcar(el);
+        else restantes = true;
+      }
+      if (!restantes) window.removeEventListener("scroll", aoRolar);
+    }
+    var aoRolar = porQuadro(varrer);
+    window.addEventListener("scroll", aoRolar, { passive: true });
+
+    // 3 · varredura inicial (conteúdo acima da dobra)
+    setTimeout(varrer, 80);
+    // 4 · timeouts escalonados
+    setTimeout(varrer, 400);
+    setTimeout(varrer, 1200);
+    setTimeout(varrer, 2600);
+    // 5 · se a página perder o foco, nada pode ficar invisível
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) revelarTudo();
+    });
+    // 6 · a guarda no-JS é a classe html.js, adicionada no <head>
+  }
+
+  /* ======================================================================
+     Parallax das fotografias
+     ====================================================================== */
+
+  function iniciarParallax() {
+    if (reduzido) return;
+    var itens = [];
+    document.querySelectorAll("[data-plx]").forEach(function (moldura) {
+      var img = moldura.querySelector("img");
+      if (!img) return;
+      itens.push({
+        moldura: moldura,
+        img: img,
+        amp: parseFloat(moldura.getAttribute("data-plx")) || 6,
+        visivel: true
+      });
+    });
+    if (!itens.length) return;
+
+    if ("IntersectionObserver" in window) {
+      var obs = new IntersectionObserver(function (es) {
+        es.forEach(function (e) {
+          itens.forEach(function (it) {
+            if (it.moldura === e.target) it.visivel = e.isIntersecting;
+          });
+        });
+      }, { rootMargin: "20% 0px" });
+      itens.forEach(function (it) { obs.observe(it.moldura); });
+    }
+
+    function pintar() {
+      var vh = window.innerHeight;
+      itens.forEach(function (it) {
+        if (!it.visivel) return;
+        var r = it.moldura.getBoundingClientRect();
+        var prog = (r.top + r.height / 2 - vh / 2) / (vh / 2 + r.height / 2);
+        prog = Math.max(-1, Math.min(1, prog));
+        it.img.style.transform = "translateY(" + (prog * it.amp).toFixed(2) + "%)";
+      });
+    }
+    var agendar = porQuadro(pintar);
+    window.addEventListener("scroll", agendar, { passive: true });
+    window.addEventListener("resize", agendar, { passive: true });
+    pintar();
+  }
+
+  /* ======================================================================
+     A reorganização (spec §5)
+     Fragmentos da rotina saem da desordem, alinham-se em coluna e abrem
+     espaço no centro para o manifesto. Progresso derivado da posição da
+     pista — rolar para cima reverte naturalmente.
+     ====================================================================== */
+
+  function iniciarReorg() {
+    var pista = document.querySelector(".reorg-pista");
+    var palco = document.querySelector(".reorg-palco");
+    if (!pista || !palco || reduzido) return;
+
+    var frags = Array.prototype.slice.call(palco.querySelectorAll(".frag"));
+    var fundo = palco.querySelector(".reorg-fundo");
+    var textoA = palco.querySelector(".rt-a");
+    var textoB = palco.querySelector(".rt-b");
+    var textoC = palco.querySelector(".rt-c");
+    if (!frags.length) return;
+
+    var layout = [];
+    var visivel = true;
+
+    function medir() {
+      var w = palco.clientWidth || window.innerWidth;
+      var h = palco.clientHeight || window.innerHeight;
+      var estreito = w < 720;
+      var rnd = semente(20260809);
+      var passo = estreito ? 30 : 34;
+      // vão central reservado ao texto: a coluna se forma JÁ aberta, metade
+      // acima e metade abaixo, para nunca colidir com o que se está lendo
+      var vao = estreito ? 150 : 190;
+      var n = frags.length;
+      var metade = n / 2;
+
+      layout = frags.map(function (el, i) {
+        var caos = {
+          x: (rnd() - 0.5) * w * (estreito ? 0.72 : 0.78),
+          y: (rnd() - 0.5) * h * 0.62,
+          r: (rnd() - 0.5) * 50
+        };
+        var y = i < metade
+          ? -(vao + (metade - 1 - i) * passo)
+          :  (vao + (i - metade) * passo);
+        return {
+          el: el,
+          caos: caos,
+          ordem: { x: 0, y: y },
+          prio: el.classList.contains("frag-prio"),
+          atraso: i * 0.012
+        };
+      });
+    }
+
+    function pintar(p) {
+      var entrada = janela(p, 0.02, 0.12);
+      var esmaecer = janela(p, 0.62, 0.80);
+
+      layout.forEach(function (f) {
+        var t = janela(p, 0.26 + f.atraso, 0.58 + f.atraso);
+        var x = lerp(f.caos.x, f.ordem.x, t);
+        var y = lerp(f.caos.y, f.ordem.y, t);
+        var r = lerp(f.caos.r, 0, t);
+        f.el.style.transform =
+          "translate3d(calc(-50% + " + x.toFixed(1) + "px), calc(-50% + " + y.toFixed(1) + "px), 0) rotate(" + r.toFixed(1) + "deg)";
+        var op = f.prio ? 1 : lerp(1, 0.15, esmaecer);
+        f.el.style.opacity = (entrada * op).toFixed(3);
+      });
+
+      // as prioridades ganham cor quando a escolha acontece
+      palco.classList.toggle("escolhido", p > 0.66);
+
+      if (fundo) fundo.style.opacity = janela(p, 0.50, 0.90).toFixed(3);
+      if (textoA) textoA.style.opacity = (1 - janela(p, 0.28, 0.36)).toFixed(3);
+      if (textoB) textoB.style.opacity = (janela(p, 0.36, 0.44) * (1 - janela(p, 0.58, 0.66))).toFixed(3);
+      if (textoC) textoC.style.opacity = janela(p, 0.68, 0.78).toFixed(3);
+    }
+
+    function progresso() {
+      var r = pista.getBoundingClientRect();
+      var total = r.height - window.innerHeight;
+      return total > 0 ? clamp01(-r.top / total) : 0;
+    }
+
+    medir();
+
+    if (pDebug !== null) {
+      pintar(pDebug);
+      html.setAttribute("data-reorg", pDebug);
       return;
     }
 
-    atoTL = buildAto();
-    ScrollTrigger.create({
-      trigger: ".ato-run",
-      start: "top top",
-      end: "bottom bottom",
-      scrub: 1.2,
-      animation: atoTL
-    });
-
-    // rebuild em resize (posições dependem do viewport)
-    var rTimer = null;
-    window.addEventListener("resize", function () {
-      clearTimeout(rTimer);
-      rTimer = setTimeout(function () {
-        var st = ScrollTrigger.getAll().find(function (s) { return s.trigger && s.trigger.classList.contains("ato-run"); });
-        var prog = st ? st.progress : 0;
-        ScrollTrigger.getAll().forEach(function (s) { s.kill(); });
-        gsap.killTweensOf("*");
-        atoTL = buildAto();
-        ScrollTrigger.create({
-          trigger: ".ato-run", start: "top top", end: "bottom bottom",
-          scrub: 1.2, animation: atoTL
-        });
-        initReveals(true);
-        initChrome();
-        ScrollTrigger.refresh();
-        void prog;
-      }, 300);
-    }, { passive: true });
-  }
-
-  /* ======================================================================
-     Reveals + redes de segurança
-     ====================================================================== */
-
-  function revealAll() {
-    document.querySelectorAll(".rv").forEach(function (el) { el.classList.add("vis"); });
-  }
-
-  function inViewport(el) {
-    var r = el.getBoundingClientRect();
-    return r.top < window.innerHeight - 40 && r.bottom > 0;
-  }
-
-  function initReveals(rebuildOnly) {
-    var els = Array.prototype.slice.call(document.querySelectorAll(".rv:not(.vis)"));
-    if (!els.length) return;
-
-    if (hasGSAP && !reduced) {
-      els.forEach(function (el) {
-        ScrollTrigger.create({
-          trigger: el, start: "top 88%", once: true,
-          onEnter: function () { el.classList.add("vis"); }
-        });
-      });
-    } else if ("IntersectionObserver" in window && !reduced) {
-      var io = new IntersectionObserver(function (es) {
-        es.forEach(function (e) {
-          if (e.isIntersecting) { e.target.classList.add("vis"); io.unobserve(e.target); }
-        });
-      }, { threshold: 0.1 });
-      els.forEach(function (el) { io.observe(el); });
-    } else {
-      els.forEach(function (el) { el.classList.add("vis"); });
+    if ("IntersectionObserver" in window) {
+      var obs = new IntersectionObserver(function (es) {
+        visivel = es[0].isIntersecting;
+        // will-change só enquanto a seção está em jogo
+        frags.forEach(function (el) { el.style.willChange = visivel ? "transform, opacity" : "auto"; });
+      }, { rootMargin: "20% 0px" });
+      obs.observe(pista);
     }
 
-    if (rebuildOnly) return;
-
-    // varredura de segurança: acima da dobra + no scroll (rAF-throttled)
-    setTimeout(function () {
-      document.querySelectorAll(".rv:not(.vis)").forEach(function (el) {
-        if (inViewport(el)) el.classList.add("vis");
-      });
-    }, 90);
-    var tick = false;
-    window.addEventListener("scroll", function () {
-      if (tick) return;
-      tick = true;
-      requestAnimationFrame(function () {
-        document.querySelectorAll(".rv:not(.vis)").forEach(function (el) {
-          if (inViewport(el)) el.classList.add("vis");
-        });
-        tick = false;
-      });
-    }, { passive: true });
-    // se a página perder o foco, nada pode ficar invisível
-    document.addEventListener("visibilitychange", function () {
-      if (document.hidden) revealAll();
-    });
-    // última rede: após 6s, tudo visível que já passou da dobra inicial
-    setTimeout(function () {
-      document.querySelectorAll(".rv:not(.vis)").forEach(function (el) {
-        if (el.getBoundingClientRect().top < window.innerHeight) el.classList.add("vis");
-      });
-    }, 6000);
+    function atualizar() { if (visivel) pintar(progresso()); }
+    var agendar = porQuadro(atualizar);
+    window.addEventListener("scroll", agendar, { passive: true });
+    window.addEventListener("resize", function () { medir(); agendar(); }, { passive: true });
+    pintar(progresso());
   }
 
   /* ======================================================================
-     Header + CTA fixo mobile (aparecem após o Ato)
+     Header, CTA fixo, FAQ, âncoras
      ====================================================================== */
 
-  var atoRunEl = document.querySelector(".ato-run");
-  function initChrome() {
-    var top = document.querySelector(".top");
-    var bar = document.querySelector(".cta-bar");
+  function iniciarCromo() {
+    var topo = document.querySelector(".topo");
+    var ctaFixo = document.querySelector(".cta-fixo");
+    var hero = document.querySelector(".hero");
+
     function estado() {
-      // header ganha fundo assim que sai do topo; CTA fixo entra após o Ato
-      top.classList.toggle("on", window.scrollY > 40);
-      var fimDoAto = atoRunEl.getBoundingClientRect().bottom - window.innerHeight;
-      bar.classList.toggle("on", fimDoAto < 0);
+      if (topo) topo.classList.toggle("rolou", window.scrollY > 30);
+      if (ctaFixo && hero) {
+        var fim = hero.getBoundingClientRect().bottom;
+        ctaFixo.classList.toggle("on", fim < 0);
+      }
     }
-    window.addEventListener("scroll", estado, { passive: true });
+    var agendar = porQuadro(estado);
+    window.addEventListener("scroll", agendar, { passive: true });
     estado();
   }
 
-  /* ======================================================================
-     anime.js — micro-detalhes (com guarda)
-     ====================================================================== */
-
-  function initMicro() {
-    if (!hasAnime || reduced) return;
-    var cue = document.querySelector(".cue span");
-    if (cue) {
-      anime({
-        targets: cue,
-        scaleY: [0, 1],
-        translateY: [0, 16],
-        opacity: [{ value: [0, 1], duration: 700 }, { value: 0, duration: 700, delay: 700 }],
-        duration: 2200,
-        easing: "easeInOutQuad",
-        loop: true
+  function iniciarFaq() {
+    var itens = document.querySelectorAll(".faq details");
+    itens.forEach(function (d) {
+      d.addEventListener("toggle", function () {
+        if (!d.open) return;
+        itens.forEach(function (o) { if (o !== d) o.open = false; });
       });
-    }
+    });
   }
 
-  /* ======================================================================
-     FAQ · âncoras · boot
-     ====================================================================== */
-
-  var faqs = document.querySelectorAll(".faq details");
-  faqs.forEach(function (d) {
-    d.addEventListener("toggle", function () {
-      if (d.open) faqs.forEach(function (o) { if (o !== d) o.open = false; });
+  function iniciarAncoras() {
+    document.querySelectorAll('a[href^="#"]').forEach(function (a) {
+      a.addEventListener("click", function (e) {
+        var id = a.getAttribute("href");
+        if (id.length < 2) return;
+        var alvo = document.querySelector(id);
+        if (!alvo) return;
+        e.preventDefault();
+        alvo.scrollIntoView({ behavior: reduzido ? "auto" : "smooth", block: "start" });
+      });
     });
-  });
-
-  document.querySelectorAll('a[href^="#"]').forEach(function (a) {
-    a.addEventListener("click", function (e) {
-      var id = a.getAttribute("href");
-      if (id.length < 2) return;
-      var alvo = document.querySelector(id);
-      if (!alvo) return;
-      e.preventDefault();
-      if (lenis) lenis.scrollTo(alvo, { offset: -64 });
-      else alvo.scrollIntoView({ behavior: reduced ? "auto" : "smooth" });
-    });
-  });
-
-  if (hasGSAP && !reduced) {
-    gsap.registerPlugin(ScrollTrigger);
-    if (lenis) {
-      lenis.on("scroll", ScrollTrigger.update);
-      gsap.ticker.add(function (t) { lenis.raf(t * 1000); });
-      gsap.ticker.lagSmoothing(0);
-    }
-    initAto();
   }
-  // sem GSAP (ou com reduced-motion): o CSS mantém o Ato empilhado e legível
 
-  initReveals(false);
-  initChrome();
-  initMicro();
-  if (reduced) revealAll();
+  /* ---------- boot ---------- */
+
+  iniciarRevelacoes();
+  iniciarParallax();
+  iniciarReorg();
+  iniciarCromo();
+  iniciarFaq();
+  iniciarAncoras();
 })();
